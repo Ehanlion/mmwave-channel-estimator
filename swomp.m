@@ -8,7 +8,7 @@
 %       .x_hat  (sparse coeffs if using dictionary; optional)
 %       .support (selected atom indices; optional)
 %   info: struct with diagnostics
-function [rec, info] = swomp(y, A, meta, params)
+function [rec, info] = swomp(~, ~, meta, params)
 info = struct(); rec = struct();
 
 % Skeleton behavior: if mock_reconstruction, return oracle channel to keep pipeline runnable.
@@ -16,19 +16,13 @@ if isfield(params,'mock_reconstruction') && params.mock_reconstruction
     rec.H_hat = meta.H_true;
     rec.x_hat = [];
     rec.support = [];
-    info.note = 'MOCK mode: returning oracle H_hat (fill SW-OMP to disable).';
+    info.note = 'MOCK mode: returning oracle H_hat (pipeline debug).';
+    if isfield(params,'warn_on_mock') && params.warn_on_mock
+        dbg(params,'[SW-OMP] MOCK RECONSTRUCTION ENABLED -> NMSE≈0 (flat). Set params.mock_reconstruction=false after implementing SW-OMP.');
+    end
     return;
 end
 
 % === TODO: Build the SW-OMP iterations here ===
-% Pseudo-steps:
-% 1) residual r = y
-% 2) For t=1..T (T <= params.M or until residual energy small):
-%       idx_t = argmax_i weight_i * |A(:,i)^H r|  (weights may depend on per-subcarrier statistics)
-%       S_t = S_{t-1} ∪ {idx_t}
-%       x_S = argmin_x || y - A(:,S_t)*x ||_2  (LS over active set)
-%       r = y - A(:,S_t)*x_S
-%    end
-% 3) Map x (sparse) back to H_hat over K subcarriers using the chosen dictionary basis
 error('SW-OMP not implemented yet. Set params.mock_reconstruction=true to run the pipeline.');
 end
