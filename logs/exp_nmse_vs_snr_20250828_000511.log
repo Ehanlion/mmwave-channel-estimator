@@ -1,0 +1,16 @@
+== EXP: NMSE vs SNR ==
+--- M=80 ---
+[00:05:11.546] [build_training] Nr=16 Nt=32 Nrf_r=4 Nrf_t=4 Ns=2 M=80
+[00:05:11.564] [vectorize] dims: Nr=16 Nt=32 Ns=2 K=64 M=80
+[00:05:11.564] [vectorize] |y|^2 mean (signal)=2.009e-03, sigma^2 set=6.354e-02, target SNR=-15.00 dB, achieved SNR≈-15.02 dB
+[00:05:11.565] [vectorize] y length: 20480 (M*K*Ns^2=20480)
+{Unrecognized function or variable 'Ng_tau'.
+
+Error in <a href="matlab:matlab.lang.internal.introspective.errorDocCallback('swomp', 'C:\Users\ethan\UCLA\EE233\project\swomp.m', 14)" style="font-weight:bold">swomp</a> (<a href="matlab: opentoline('C:\Users\ethan\UCLA\EE233\project\swomp.m',14,0)">line 14</a>)
+maxIters = min(getdef(params,'max_iters',params.L), Ng_tau*Ng_rx*Ng_tx);
+                                                    ^^^^^^
+Error in <a href="matlab:matlab.lang.internal.introspective.errorDocCallback('sol_nmse_vs_snr', 'C:\Users\ethan\UCLA\EE233\project\sol_nmse_vs_snr.m', 32)" style="font-weight:bold">sol_nmse_vs_snr</a> (<a href="matlab: opentoline('C:\Users\ethan\UCLA\EE233\project\sol_nmse_vs_snr.m',32,0)">line 32</a>)
+            [rec,~] = swomp(y, A, meta, params);
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+sol_nmse_vs_snr

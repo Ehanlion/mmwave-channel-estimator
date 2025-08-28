@@ -1,2 +1,17 @@
 == EXP: NMSE vs SNR ==
 --- M=80 ---
+[23:59:42.014] [build_training] Nr=16 Nt=32 Nrf_r=4 Nrf_t=4 Ns=2 M=80
+[23:59:42.030] [vectorize] dims: Nr=16 Nt=32 Ns=2 K=64 M=80
+[23:59:42.031] [vectorize] |y|^2 mean (signal)=2.009e-03, sigma^2 set=6.354e-02, target SNR=-15.00 dB, achieved SNR≈-15.02 dB
+[23:59:42.032] [vectorize] y length: 20480 (M*K*Ns^2=20480)
+{Error using <a href="matlab:matlab.lang.internal.introspective.errorDocCallback('getfield', 'C:\Program Files\MATLAB\R2025a\toolbox\matlab\datatypes\struct\getfield.m', 28)" style="font-weight:bold">getfield</a> (<a href="matlab: opentoline('C:\Program Files\MATLAB\R2025a\toolbox\matlab\datatypes\struct\getfield.m',28,0)">line 28</a>)
+Inputs must be strings, character vectors, or cell array of indices.
+
+Error in <a href="matlab:matlab.lang.internal.introspective.errorDocCallback('swomp', 'C:\Users\ethan\UCLA\EE233\project\swomp.m', 66)" style="font-weight:bold">swomp</a> (<a href="matlab: opentoline('C:\Users\ethan\UCLA\EE233\project\swomp.m',66,0)">line 66</a>)
+maxIters  = min(getfield(params,'max_iters',params.L), Qang*Ng_tau); %#ok<GFLD>
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in <a href="matlab:matlab.lang.internal.introspective.errorDocCallback('sol_nmse_vs_snr', 'C:\Users\ethan\UCLA\EE233\project\sol_nmse_vs_snr.m', 32)" style="font-weight:bold">sol_nmse_vs_snr</a> (<a href="matlab: opentoline('C:\Users\ethan\UCLA\EE233\project\sol_nmse_vs_snr.m',32,0)">line 32</a>)
+            [rec,~] = swomp(y, A, meta, params);
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
+sol_nmse_vs_snr
