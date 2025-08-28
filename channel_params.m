@@ -30,16 +30,25 @@ params.angles_on_grid = true;      % on-grid assumption (required)
 params.M        = 80;              % training frames (also used as SW-OMP iters bound)
 params.pilotPow = 1;               % pilot symbol power
 
-% --- Noise / SNR (over subcarrier average) ---
+% --- Noise / SNR (over measurement vector) ---
 params.SNRdB_list = -15:5:10;
 params.SNRdB      = 0;             % default if single run
 
 % --- MC ---
 params.Nmc = 50;                   % Monte Carlo trials (tune in experiments)
 
-% --- Flags / skeleton helpers ---
-params.mock_reconstruction = true; % if true, SW-OMP returns oracle H_hat = H_true (skeleton)
-params.random_seed         = 233;  % reproducibility
+% --- Debug / logging ---
+params.verbose            = false;          % enable printf-style debug
+params.debug_dump         = false;          % save per-trial MAT dumps
+params.debug_dir          = fullfile(pwd,'debug_dumps');
+params.log_dir            = fullfile(pwd,'logs');
+params.warn_on_mock       = true;           % warn if mock reconstruction enabled
+params.random_seed        = 233;            % RNG
+
+% --- Reconstruction mode ---
+% NOTE: When true, SW-OMP returns oracle H_hat = H_true.
+%       This will make NMSE ≈ 0 (flat curve). Set to false after SW-OMP is implemented.
+params.mock_reconstruction = true;
 
 % --- Apply name-value overrides ---
 if ~isempty(varargin)
