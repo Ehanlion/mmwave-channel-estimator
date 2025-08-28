@@ -4,7 +4,6 @@
 %   W_RF: [Nr x Nrf_r x M],  W_BB: [Nrf_r x Ns x M]
 %   F_RF: [Nt x Nrf_t x M],  F_BB: [Nrf_t x Ns x M]
 function [W_RF,W_BB,F_RF,F_BB] = build_training(params)
-seed_rng(params.random_seed);
 
 Nt=params.Nt; Nr=params.Nr; M=params.M;
 Nrf_t=params.Nrf_t; Nrf_r=params.Nrf_r; Ns=params.Ns;

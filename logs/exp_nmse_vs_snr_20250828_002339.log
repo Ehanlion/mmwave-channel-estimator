@@ -1,0 +1,19 @@
+== EXP: NMSE vs SNR ==
+--- M=80 ---
+{Unrecognized function or variable 'iM'.
+
+Error in <a href="matlab:matlab.lang.internal.introspective.errorDocCallback('build_training', 'C:\Users\ethan\UCLA\EE233\project\build_training.m', 8)" style="font-weight:bold">build_training</a> (<a href="matlab: opentoline('C:\Users\ethan\UCLA\EE233\project\build_training.m',8,0)">line 8</a>)
+    seed_rng(params.random_seed + 1000*iM + 100*iS + t);  % NEW: unique per trial
+                                       ^^
+Error in <a href="matlab:matlab.lang.internal.introspective.errorDocCallback('sol_nmse_vs_snr', 'C:\Users\ethan\UCLA\EE233\project\sol_nmse_vs_snr.m', 30)" style="font-weight:bold">sol_nmse_vs_snr</a> (<a href="matlab: opentoline('C:\Users\ethan\UCLA\EE233\project\sol_nmse_vs_snr.m',30,0)">line 30</a>)
+            [W_RF,W_BB,F_RF,F_BB] = build_training(params);
+                                    ^^^^^^^^^^^^^^^^^^^^^^
+} 
+sol_nmse_vs_snr
+{Unable to resolve the name 'params.Nmc'.
+
+Error in <a href="matlab:matlab.lang.internal.introspective.errorDocCallback('sol_nmse_vs_snr', 'C:\Users\ethan\UCLA\EE233\project\sol_nmse_vs_snr.m', 6)" style="font-weight:bold">sol_nmse_vs_snr</a> (<a href="matlab: opentoline('C:\Users\ethan\UCLA\EE233\project\sol_nmse_vs_snr.m',6,0)">line 6</a>)
+for t = 1:params.Nmc
+          ^^^^^^^^^^
+} 
+sol_nmse_vs_snr

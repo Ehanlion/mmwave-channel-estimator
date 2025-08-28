@@ -3,6 +3,15 @@
 % Experiment: NMSE vs SNR for M in {80, 120}. Produces a plot.
 clear; close all; clc;
 
+for t = 1:params.Nmc
+    seed_rng(params.random_seed + 1000*iM + 100*iS + t);  % NEW: unique per trial
+    [H,~] = gen_channel(params);
+    [W_RF,W_BB,F_RF,F_BB] = build_training(params);
+    [y, A, meta] = vectorize_measurements(H, W_RF,W_BB,F_RF,F_BB, params, snrdb); %#ok<ASGLU>
+    [rec,~] = swomp(y, A, meta, params);
+    acc = acc + nmse(H, rec.H_hat, params);
+end
+
 params0 = channel_params();
 
 if ~exist(params0.log_dir,'dir'); mkdir(params0.log_dir); end
@@ -25,15 +34,13 @@ for iM = 1:numel(M_list)
     for iS = 1:numel(SNRdB_list)
         snrdb = SNRdB_list(iS);
         acc = 0;
-        for t = 1:params.Nmc
-            seed_rng(params.random_seed + 1000*iM + 100*iS + t);  % NEW: unique per trial
+        for t=1:params.Nmc
             [H,~] = gen_channel(params);
             [W_RF,W_BB,F_RF,F_BB] = build_training(params);
-            [y, A, meta] = vectorize_measurements(H, W_RF,W_BB,F_RF,F_BB, params, snrdb);
+            [y, A, meta] = vectorize_measurements(H, W_RF,W_BB,F_RF,F_BB, params, snrdb); %#ok<ASGLU>
             [rec,~] = swomp(y, A, meta, params);
             acc = acc + nmse(H, rec.H_hat, params);
         end
-
         nmse_curves(iM,iS) = acc/params.Nmc;
         fprintf('M=%d | SNR=%+3.0f dB -> NMSE=%.3e\n', params.M, snrdb, nmse_curves(iM,iS));
     end
