@@ -20,7 +20,7 @@ for iM = 1:numel(M_list)
         for t=1:params.Nmc
             [H,~] = gen_channel(params);
             [W_RF,W_BB,F_RF,F_BB] = build_training(params);
-            [y, A, meta] = vectorize_measurements(H, W_RF,W_BB,F_RF,F_BB, params, snrdb); %#ok<ASGLU>
+            [y, A, meta] = vectorize_measurements(H, W_RF,W_BB,F_RF,F_BB, params, snrdb);
             [rec,~] = swomp(y, A, meta, params);
             acc = acc + nmse(H, rec.H_hat);
         end
