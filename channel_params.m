@@ -7,50 +7,47 @@ function params = channel_params(varargin)
 params = struct();
 
 % --- Arrays & streams ---
-params.Nt    = 32;     % TX antennas
-params.Nr    = 16;     % RX antennas
-params.Nrf_t = 4;      % TX RF chains
-params.Nrf_r = 4;      % RX RF chains
-params.Ns    = 2;      % data streams (<= min(Nrf_t, Nrf_r))
+params.Nt    = 32; params.Nr = 16;
+params.Nrf_t = 4;  params.Nrf_r = 4;
+params.Ns    = 2;
 
 % --- OFDM / bandwidth ---
-params.K     = 64;     % subcarriers
-params.fc    = 28e9;   % carrier [Hz]
-params.BW    = 400e6;  % bandwidth [Hz]
-params.fs    = params.BW;  % sample rate (simple wideband model)
+params.K     = 64;
+params.fc    = 28e9;
+params.BW    = 400e6;
+params.fs    = params.BW;
 
 % --- Channel sparsity (on-grid) ---
-params.L        = 3;               % paths
-params.Ng_tx    = 64;              % AoD grid size
-params.Ng_rx    = 64;              % AoA grid size
-params.Ng_tau   = 16;              % delay grid size
-params.angles_on_grid = true;      % on-grid assumption (required)
+params.L        = 3;
+params.Ng_tx    = 64;
+params.Ng_rx    = 64;
+params.Ng_tau   = 16;
+params.angles_on_grid = true;
 
-% --- Training (to be swept in experiments) ---
-params.M        = 80;              % training frames (also used as SW-OMP iters bound)
-params.pilotPow = 1;               % pilot symbol power
+% --- Training ---
+params.M        = 80;
+params.pilotPow = 1;
 
-% --- Noise / SNR (over measurement vector) ---
+% --- Noise / SNR ---
 params.SNRdB_list = -15:5:10;
-params.SNRdB      = 0;             % default if single run
+params.SNRdB      = 0;
 
 % --- MC ---
-params.Nmc = 50;                   % Monte Carlo trials (tune in experiments)
+params.Nmc = 50;
 
 % --- Debug / logging ---
-params.verbose            = false;          % enable printf-style debug
-params.debug_dump         = false;          % save per-trial MAT dumps
-params.debug_dir          = fullfile(pwd,'debug_dumps');
-params.log_dir            = fullfile(pwd,'logs');
-params.warn_on_mock       = true;           % warn if mock reconstruction enabled
-params.random_seed        = 233;            % RNG
+params.verbose     = false;
+params.debug_dump  = false;
+params.debug_dir   = fullfile(pwd,'debug_dumps');
+params.log_dir     = fullfile(pwd,'logs');
+params.random_seed = 233;
 
-% --- Reconstruction mode ---
-% NOTE: When true, SW-OMP returns oracle H_hat = H_true.
-%       This will make NMSE ≈ 0 (flat curve). Set to false after SW-OMP is implemented.
-params.mock_reconstruction = true;
+% --- Reconstruction ---
+params.mock_reconstruction = false;   % <--- use real SW-OMP now
+params.max_iters = params.L;          % SW-OMP iterations cap
+params.stop_tol  = 1e-3;              % relative residual improvement threshold
 
-% --- Apply name-value overrides ---
+% overrides
 if ~isempty(varargin)
     assert(mod(numel(varargin),2)==0,"Use name-value pairs.");
     for i=1:2:numel(varargin)
