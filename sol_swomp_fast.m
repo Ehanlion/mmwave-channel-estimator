@@ -127,12 +127,6 @@ end % main
 
 %% ============================= FUNCTIONS ================================
 
-function A = steerULA(N, angles)
-% Half-wavelength ULA steering dictionary, size N x numel(angles)
-    n = (0:N-1).';
-    A = (1/sqrt(N)) * exp(1j * (n*pi) .* cos(angles(:).'));
-end
-
 function chan = generateOnGridChannel(Nt,Nr,K,Nc,Lpaths,angGridTx,angGridRx,rhoL)
 % On-grid wideband geometric channel per [R-4, Sec. II].
 % Randomly select Lpaths indices on the AoD/AoA grids; random delays 0..Nc-1
@@ -158,38 +152,60 @@ function chan = generateOnGridChannel(Nt,Nr,K,Nc,Lpaths,angGridTx,angGridRx,rhoL
     chan.Hk = Hk;   % cell of Nr x Nt per subcarrier
 end
 
+%% --- DROP-IN REPLACEMENTS (robust to shape issues) ---
+
+function A = steerULA(N, angles)
+% Half-wavelength ULA steering dictionary, size N x numel(angles)
+    n   = (0:N-1).';                         % N x 1
+    ang = angles(:).';                       % 1 x G
+    A   = (1/sqrt(N)) * exp(1j * (n*pi) * cos(ang));  % (N x 1)*(1 x G) -> N x G
+end
+
 function [Uw, Yw_clean] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR)
-% Build whitened dictionary Υ_w and CLEAN (noise-free) whitened measurements Y_w_clean.
-% We avoid Φ and Ψ explicitly using Kronecker mixed-product: U_m = kron((q.'*Ftr.')*conj(AT), (Wtr.')*AR).
+% Whitened dictionary Υ_w and noise-free whitened measurements Y_w_clean.
+% Uses reshape-based sampling to guarantee Ftr is Nt x Lt and Wtr is Nr x Lr.
+
     Gt = size(AT,2); Gr = size(AR,2); G = Gt*Gr;
     MLr = M*Lr;
     Uw = zeros(MLr, G);
     Yw_clean = zeros(MLr, K);
 
     for m = 1:M
-        % Random constant-modulus training precoder/combiner (2-bit phases)
-        Ftr = (1/sqrt(Nt)) * exp(1j*phaseSet(randi(numel(phaseSet), Nt, Lt)));
-        Wtr = (1/sqrt(Nr)) * exp(1j*phaseSet(randi(numel(phaseSet), Nr, Lr)));
-        q   = ones(Lt,1);
-        Fq  = Ftr*q;                                  % Nt x 1 (flat across subcarriers)
+        % --- constant-modulus training with explicit shaping ---
+        idxF = randi(numel(phaseSet), Nt*Lt, 1);
+        Ftr  = (1/sqrt(Nt)) * reshape(exp(1j * phaseSet(idxF)), Nt, Lt);  % Nt x Lt
 
-        % Dictionary block using Kron property (Lr x (Gt*Gr))
-        Ttx = (q.' * Ftr.') * conj(AT);               % 1 x Gt
-        Trx = (Wtr.') * AR;                           % Lr x Gr
-        U_m = kron(Ttx, Trx);                         % Lr x G
+        idxW = randi(numel(phaseSet), Nr*Lr, 1);
+        Wtr  = (1/sqrt(Nr)) * reshape(exp(1j * phaseSet(idxW)), Nr, Lr);  % Nr x Lr
 
-        % Whitening for this frame via R_m = chol(Wtr'*Wtr,'upper')
-        Rm = chol(Wtr'*Wtr, 'upper');                 % Lr x Lr
-        Uw((m-1)*Lr+(1:Lr),:) = Rm' \ U_m;            % D_w^{-H} * U_m
+        % sanity (won't error unless something upstream changed N/L dims)
+        % assert(isequal(size(Ftr), [Nt Lt]) && isequal(size(Wtr), [Nr Lr]));
 
-        % Clean (noise-free) whitened measurements for all K subcarriers
+        q   = ones(Lt,1);                         % Lt x 1
+        Fq  = Ftr * q;                            % Nt x 1
+
+        % --- dictionary blocks (dimension-safe) ---
+        % Ttx: (1xLt)*(Lt x Nt)*(Nt x Gt) -> (1 x Gt)
+        Ttx = q.' * (Ftr.' * conj(AT));          % 1 x Gt
+        % Trx: (Lr x Nr)*(Nr x Gr) -> (Lr x Gr)
+        Trx = (Wtr.') * AR;                      % Lr x Gr
+
+        U_m = kron(Ttx, Trx);                    % Lr x (Gt*Gr)
+
+        % --- whitening for this frame ---
+        Rm = chol(Wtr'*Wtr, 'upper');            % Lr x Lr
         idx = (m-1)*Lr+(1:Lr);
+
+        Uw(idx,:) = Rm' \ U_m;                   % D_w^{-H} * U_m
+
+        % --- clean (noise-free) whitened measurements for all subcarriers ---
         for k = 1:K
-            y = (Wtr') * chan.Hk{k} * Fq;            % Lr x 1
-            Yw_clean(idx, k) = Rm' \ y;              % D_w^{-H} * y
+            y = (Wtr') * chan.Hk{k} * Fq;        % Lr x 1
+            Yw_clean(idx, k) = Rm' \ y;          % D_w^{-H} * y
         end
     end
 end
+
 
 function Hv_hat = swomp_joint_fast(Yw, Uw, epsStop, maxIter)
 % SW-OMP on whitened measurements/dictionary with a common support across K subcarriers.
