@@ -22,38 +22,25 @@ AR = steerULA(Nr, angGridRx);   % Nr x Gr
 
 chan = generateOnGridChannel(Nt,Nr,K,Nc,Lpaths,angGridTx,angGridRx,1);
 
-%% ------------------------- Fig 1: NMSE vs SNR ----------------------------
+% === Fig 1: NMSE vs SNR (smoothed with MC averaging) ===
 SNRdB_vec = -15:2.5:10;
 M_list = [80, 120];
+Nmc = 32;   % 16–64 gives very smooth curves
+
+pars = struct('Nt',Nt,'Nr',Nr,'Lt',Lt,'Lr',Lr,'K',K,'Nc',Nc,'Lpaths',Lpaths, ...
+              'angGridTx',angGridTx,'angGridRx',angGridRx,'phaseSet',phaseSet, ...
+              'AT',AT,'AR',AR);
 
 figure('Name','NMSE vs SNR'); tiledlayout(1,1); ax1=nexttile; hold on; grid on;
-
 for Mi = 1:numel(M_list)
     M = M_list(Mi);
-
-    % Build whitened dictionary and CLEAN measurements once (no noise)
-    [Uw, Yw_clean] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR);
-
-    % Calibrate σ^2 so that SNR in the WHITENED measurement domain matches target
-    sigpow = mean(abs(Yw_clean(:)).^2);  % average signal power per entry after whitening
-
-    nmse_curve = zeros(size(SNRdB_vec));
-    for is = 1:numel(SNRdB_vec)
-        SNRdB = SNRdB_vec(is);
-        sigma2 = sigpow / (10^(SNRdB/10));                          % enforce SNR := sigpow/σ^2
-        Yw = Yw_clean + sqrt(sigma2/2).*(randn(size(Yw_clean))+1j*randn(size(Yw_clean)));
-
-        epsStop = sigma2; maxIter = 8;
-        Hv_hat = swomp_joint_fast(Yw, Uw, epsStop, maxIter);
-        Hhat = Hv_to_H(Hv_hat, AT, AR, K);
-        nmse_curve(is) = nmse_of_estimate(Hhat, chan.Hk);
-    end
-
+    nmse_curve = nmse_vs_snr_avg(M, SNRdB_vec, Nmc, pars);
     plot(ax1, SNRdB_vec, 10*log10(nmse_curve), 'LineWidth', 1.8, ...
          'DisplayName', sprintf('M=%d',M));
 end
 xlabel('SNR (dB)'); ylabel('NMSE (dB)');
 title('NMSE vs SNR (on-grid AoA/AoD)'); legend('Location','southwest');
+
 
 %% ------------------------- Fig 2: NMSE vs M ------------------------------
 M_sweep = 20:5:100;
@@ -71,7 +58,8 @@ for is = 1:numel(SNRdB_set)
         sigma2 = sigpow / (10^(SNRdB/10));
         Yw = Yw_clean + sqrt(sigma2/2).*(randn(size(Yw_clean))+1j*randn(size(Yw_clean)));
 
-        epsStop = sigma2; maxIter = 8;
+        epsStop = sigma2; 
+        maxIter = Lpaths; % change to Lpath
         Hv_hat = swomp_joint_fast(Yw, Uw, epsStop, maxIter);
         Hhat = Hv_to_H(Hv_hat, AT, AR, K);
         nmse_vsM(im) = nmse_of_estimate(Hhat, chan.Hk);
@@ -108,6 +96,33 @@ end % main
 
 
 %% ============================= FUNCTIONS =================================
+
+function nmse_curve = nmse_vs_snr_avg(M, SNRdB_vec, Nmc, pars)
+% Averages NMSE over Nmc trials. In each trial:
+%  - Draw a fresh channel
+%  - Draw one random training, keep it FIXED across all SNR points
+%  - Calibrate sigma^2 in the whitened domain per that training
+    nmse_acc = zeros(size(SNRdB_vec));
+    for t = 1:Nmc
+        % fresh channel
+        chan_mc = generateOnGridChannel(pars.Nt,pars.Nr,pars.K,pars.Nc,pars.Lpaths, ...
+                                        pars.angGridTx,pars.angGridRx,1);
+        % one training/design for all SNRs
+        [Uw, Yw_clean] = buildUw_and_cleanY(pars.Nt,pars.Nr,pars.Lt,pars.Lr,M,pars.K, ...
+                                            pars.phaseSet,chan_mc,pars.AT,pars.AR);
+        sigpow = mean(abs(Yw_clean(:)).^2);   % whitened-domain signal power
+        for is = 1:numel(SNRdB_vec)
+            sigma2 = sigpow / (10^(SNRdB_vec(is)/10));
+            Yw = Yw_clean + sqrt(sigma2/2).*(randn(size(Yw_clean))+1j*randn(size(Yw_clean)));
+            Hv_hat = swomp_joint_fast(Yw, Uw, sigma2, 8);
+            Hhat = Hv_to_H(Hv_hat, pars.AT, pars.AR, pars.K);
+            nmse_acc(is) = nmse_acc(is) + nmse_of_estimate(Hhat, chan_mc.Hk);
+        end
+    end
+    nmse_curve = nmse_acc / Nmc;
+end
+
+
 function A = steerULA(N, angles)
     n = (0:N-1).';
     A = (1/sqrt(N)) * exp(1j * (n*pi) * cos(angles(:).'));
@@ -183,8 +198,9 @@ function Hv_hat = swomp_joint_fast(Yw, Uw, epsStop, maxIter)
     mse = inf; it = 0;
     while (mse > epsStop) && (it < maxIter)
         it = it + 1;
-        C = Uw' * r;                     % G x K
-        score = sum(abs(C), 2);          % G x 1
+        % in swomp_joint_fast:
+        C = Uw' * r;               % G x K
+        score = sum(abs(C).^2, 2); % <-- energy (often more stable)
         score(T) = -inf;
         [~, p] = max(score);
         T(p) = true;
