@@ -40,13 +40,14 @@ The following is the project layout. We will break the project down into subfile
 
 ```txt
 
-pdf for the paper we referenced
 pdf for project spec doc
 pdf for discussion containing examples and guidance
 README
 sol_swomp_fast.m -> solution file
 
 ```
+
+The pdf for the paper is NOT included anymore because I am pretty sure it might be a copyright violation which I do not want. Instead, I provide the paper's name: "Frequency-Domain Compressive Channel Estimation for Frequency-Selective Hybrid Millimeter Wave MIMO Systems by Javier Rodríguez Fernández, Nuria González-Prelcic , Kiran Venugopal, Student Member, IEEE, and Robert W. Heath, Jr. , Fellow, IEEE." This paper was instrumental in our success, please check it out!
 
 The project directory will also include the specs sheet for the project, an advisement paper about approaches and methods, as well as the final report. 
 
