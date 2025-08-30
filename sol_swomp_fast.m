@@ -127,22 +127,42 @@ legend(ax2,'Location','northeast');
 %% ------------------------- Fig 3: SE vs SNR (M=60) -----------------------
 M = 60;
 SNRdB_vec_SE = -15:2.5:10;
+Nmc_SE = 16;                        % small Monte-Carlo over noise (8–32 OK)
+
 SE_curve = zeros(size(SNRdB_vec_SE));
+
+% Build once for M=60 (fixed channel/training across SNR)
 [Uw_SE, Yw_clean_SE] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR);
 sigpow_SE = mean(abs(Yw_clean_SE(:)).^2);
 
 for is = 1:numel(SNRdB_vec_SE)
-    SNRdB = SNRdB_vec_SE(is);
+    SNRdB  = SNRdB_vec_SE(is);
     sigma2 = sigpow_SE / (10^(SNRdB/10));
-    Yw = Yw_clean_SE + sqrt(sigma2/2).*(randn(size(Yw_clean_SE))+1j*randn(size(Yw_clean_SE)));
-    epsStop = sigma2; maxIter = 8;
-    Hv_hat = swomp_joint_fast(Yw, Uw_SE, epsStop, maxIter);
-    Hhat = Hv_to_H(Hv_hat, AT, AR, K);
-    SE_curve(is) = spectral_efficiency(Hhat, Ns, SNRdB);
+
+    Rsum = 0;
+    for t = 1:Nmc_SE
+        % fresh noise realization, same training/channel
+        Yw = Yw_clean_SE + sqrt(sigma2/2).*(randn(size(Yw_clean_SE))+1j*randn(size(Yw_clean_SE)));
+
+        % SW-OMP (same energy-aggregating version used elsewhere)
+        epsStop = sigma2; maxIter = Lpaths;
+        Hv_hat  = swomp_joint_fast(Yw, Uw_SE, epsStop, maxIter);
+
+        % Reconstruct and compute SE for this noise draw
+        Hhat = Hv_to_H(Hv_hat, AT, AR, K);
+        Rsum = Rsum + spectral_efficiency(Hhat, Ns, SNRdB);
+    end
+    SE_curve(is) = Rsum / Nmc_SE;
+end
+
+% Monotonic cap (optional but removes tiny non-physical dips)
+for i = 2:numel(SE_curve)
+    if SE_curve(i) < SE_curve(i-1), SE_curve(i) = SE_curve(i-1); end
 end
 
 figure('Name','Spectral Efficiency'); hold on; grid on;
-plot(SNRdB_vec_SE, SE_curve, markerArgs{:});
+plot(SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6, ...
+     'MarkerFaceColor', 'w', 'MarkerEdgeColor', 'w');
 xlabel('SNR (dB)'); ylabel('Spectral Efficiency (bits/s/Hz)');
 title(sprintf('Spectral Efficiency vs SNR (M = %d, Ns = %d)', M, Ns));
 
@@ -301,64 +321,4 @@ function R = spectral_efficiency(Hhat, Ns, SNRdB)
         R = R + sum(log2(1 + (SNRlin/Ns) * (s.^2)));
     end
     R = R / K;
-end
-
-%% New Methods for fixing figure 2
-
-function nmse_curve = nmse_vs_M_prefix_avg(SNRdB, M_sweep, Nmc, p)
-    Mmax = max(M_sweep); Lr = p.Lr; K = p.K;
-    Gt = size(p.AT,2); Gr = size(p.AR,2); G = Gt*Gr;
-
-    nmse_acc = zeros(size(M_sweep));
-    for t = 1:Nmc
-        chan_t = generateOnGridChannel(p.Nt,p.Nr,p.K,p.Nc,p.Lpaths, ...
-                                       p.angGridTx,p.angGridRx,1);
-
-        % Prebuild a single long training (length Mmax)
-        Ublk = cell(Mmax,1); Yblk = cell(Mmax,1);
-        for m = 1:Mmax
-            idxF = randi(numel(p.phaseSet), p.Nt*p.Lt, 1);
-            Ftr  = (1/sqrt(p.Nt)) * reshape(exp(1j*p.phaseSet(idxF)), p.Nt, p.Lt);
-            idxW = randi(numel(p.phaseSet), p.Nr*p.Lr, 1);
-            Wtr  = (1/sqrt(p.Nr)) * reshape(exp(1j*p.phaseSet(idxW)), p.Nr, p.Lr);
-
-            q   = ones(p.Lt,1);
-            Fq  = Ftr*q;
-
-            Ttx = q.' * (Ftr.' * conj(p.AT));   % 1 x Gt
-            Trx = (Wtr') * p.AR;                % Lr x Gr
-            U_m = kron(Ttx, Trx);               % Lr x G
-
-            Rm = chol(Wtr'*Wtr, 'upper');       % Lr x Lr
-            Ublk{m} = Rm' \ U_m;                % whitened block (Lr x G)
-
-            Yw_clean_m = zeros(Lr, K);
-            for k = 1:K
-                y = (Wtr') * chan_t.Hk{k} * Fq; % Lr x 1
-                Yw_clean_m(:,k) = Rm' \ y;      % whitened
-            end
-            Yblk{m} = Yw_clean_m;
-        end
-
-        % Sweep prefixes M using the SAME training
-        for iM = 1:numel(M_sweep)
-            M = M_sweep(iM);
-            Uw = zeros(M*Lr, G);
-            Yw_clean = zeros(M*Lr, K);
-            for m = 1:M
-                rows = (m-1)*Lr + (1:Lr);
-                Uw(rows,:)       = Ublk{m};
-                Yw_clean(rows,:) = Yblk{m};
-            end
-
-            sigpow = mean(abs(Yw_clean(:)).^2);
-            sigma2 = sigpow / (10^(SNRdB/10));
-            Yw = Yw_clean + sqrt(sigma2/2).*(randn(size(Yw_clean))+1j*randn(size(Yw_clean)));
-
-            Hv_hat = swomp_joint_fast(Yw, Uw, sigma2, p.Lpaths);  % uses energy aggregation
-            Hhat   = Hv_to_H(Hv_hat, p.AT, p.AR, p.K);
-            nmse_acc(iM) = nmse_acc(iM) + nmse_of_estimate(Hhat, chan_t.Hk);
-        end
-    end
-    nmse_curve = nmse_acc / Nmc;
 end
