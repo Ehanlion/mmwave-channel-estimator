@@ -6,11 +6,15 @@ function sol_swomp_fast()
 clc; close all; rng(1);
 
 %% ------------------------- Parameters ------------------------------------
-Nt = 32; Nr = 32;
-Lt = 1;  Lr = 4;
+Nt = 32; 
+Nr = 32;
+Lt = 1;  
+Lr = 4;
 K  = 16;
-Nc = 4;  Lpaths = 4;
-Gt = 64; Gr = 64;
+Nc = 4;  
+Lpaths = 4;
+Gt = 64; 
+Gr = 64;
 Ns = 2;
 
 phaseSet = 2*pi*(0:3)/4;
@@ -49,35 +53,75 @@ legend(ax1,'Location','southwest');
 
 
 %% ------------------------- Fig 2: NMSE vs M ------------------------------
-M_sweep = 20:5:100;
-SNRdB_set = [-10, -5, 0];
+M_sweep    = 20:5:100;
+SNRdB_set  = [-10, -5, 0];
+Nmc_Fig2   = 24;                         % MC trials for stability (16–32 is fine)
 
-figure('Name','NMSE vs M'); tiledlayout(1,1);
+% Fig. 5 parameters
+Nt2 = 32; Nr2 = 32;
+Lt2 = 4;  Lr2 = 4;
+K2  = 256;             % total subcarriers
+Kp  = 64;              % pilot subcarriers used by SW-OMP
+Gt2 = 128; Gr2 = 128;
+
+angGridTx2 = linspace(0,pi,Gt2);
+angGridRx2 = linspace(0,pi,Gr2);
+AT2 = steerULA(Nt2, angGridTx2);
+AR2 = steerULA(Nr2, angGridRx2);
+
+% equispaced pilot tones
+pilot_idx = round(linspace(1, K2, Kp));
+
+figure('Name','NMSE vs M (Fig.5 setup)'); tiledlayout(1,1);
 ax2 = nexttile; hold(ax2,'on'); grid(ax2,'on');
+
+% white markers for all lines
+markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6,'MarkerFaceColor','w','MarkerEdgeColor','w'};
 
 for is = 1:numel(SNRdB_set)
     SNRdB = SNRdB_set(is);
-    nmse_vsM = zeros(size(M_sweep));
+    nmse_acc = zeros(size(M_sweep));
+    Mmax = max(M_sweep);
 
-    for im = 1:numel(M_sweep)
-        M = M_sweep(im);
-        [Uw, Yw_clean] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR);
-        sigpow = mean(abs(Yw_clean(:)).^2);
-        sigma2 = sigpow / (10^(SNRdB/10));
-        Yw = Yw_clean + sqrt(sigma2/2).*(randn(size(Yw_clean))+1j*randn(size(Yw_clean)));
+    for t = 1:Nmc_Fig2
+        % One channel per trial
+        chan_t = generateOnGridChannel(Nt2,Nr2,K2,Nc,Lpaths,angGridTx2,angGridRx2,1);
 
-        epsStop = sigma2; 
-        maxIter = Lpaths;
-        Hv_hat = swomp_joint_fast(Yw, Uw, epsStop, maxIter);
-        Hhat = Hv_to_H(Hv_hat, AT, AR, K);
-        nmse_vsM(im) = nmse_of_estimate(Hhat, chan.Hk);
+        % One LONG training per trial; reuse its prefixes for all M
+        [Uw_full, Yw_clean_full] = buildUw_and_cleanY(Nt2,Nr2,Lt2,Lr2,Mmax,K2,phaseSet,chan_t,AT2,AR2);
+
+        % Keep only pilot tones
+        Yw_clean_p_full = Yw_clean_full(:, pilot_idx);        % (Mmax*Lr2) x Kp
+
+        for iM = 1:numel(M_sweep)
+            M = M_sweep(iM);
+            rows = 1:(M*Lr2);
+
+            Uw      = Uw_full(rows, :);                       % (M*Lr2) x (Gt2*Gr2)
+            Yw_clean_p = Yw_clean_p_full(rows, :);            % (M*Lr2) x Kp
+
+            % SNR calibration in the whitened domain for this prefix
+            sigpow = mean(abs(Yw_clean_p(:)).^2);
+            sigma2 = sigpow / (10^(SNRdB/10));
+            Yw = Yw_clean_p + sqrt(sigma2/2).*(randn(size(Yw_clean_p))+1j*randn(size(Yw_clean_p)));
+
+            % SW-OMP (energy aggregation version you already use everywhere)
+            epsStop = sigma2; maxIter = Lpaths;
+            Hv_hat  = swomp_joint_fast(Yw, Uw, epsStop, maxIter);
+
+            % Reconstruct & NMSE on pilot subcarriers only
+            Hhat_p  = Hv_to_H(Hv_hat, AT2, AR2, Kp);
+            nmse_acc(iM) = nmse_acc(iM) + nmse_of_estimate(Hhat_p, chan_t.Hk(pilot_idx));
+        end
     end
 
+    nmse_vsM = nmse_acc / Nmc_Fig2;
     plot(ax2, M_sweep, 10*log10(nmse_vsM), markerArgs{:}, ...
          'DisplayName', sprintf('SNR=%d dB', SNRdB));
 end
+
 xlabel(ax2,'Training frames, M'); ylabel(ax2,'NMSE (dB)');
-title(ax2,'NMSE vs number of frames (on-grid AoA/AoD)');
+title(ax2,'NMSE vs number of frames (on-grid AoA/AoD) – Fig. 5 parameters');
 legend(ax2,'Location','northeast');
 
 %% ------------------------- Fig 3: SE vs SNR (M=60) -----------------------
@@ -208,19 +252,21 @@ function Hv_hat = swomp_joint_fast(Yw, Uw, epsStop, maxIter)
     mse = inf; it = 0;
     while (mse > epsStop) && (it < maxIter)
         it = it + 1;
-        % in swomp_joint_fast:
-        C = Uw' * r;               % G x K
-        score = sum(abs(C).^2, 2); % <-- energy (often more stable)
+
+        C = Uw' * r;                 % G x K
+        score = sum(abs(C).^2, 2);   % aggregate energy across subcarriers (stable)
         score(T) = -inf;
         [~, p] = max(score);
         T(p) = true;
 
-        UwT = Uw(:, T);                  % MLr x |T|
+        UwT = Uw(:, T);              % MLr x |T|
         [Q,R] = qr(UwT, 0);
-        X_T = R \ (Q' * Yw);             % |T| x K
+        X_T = R \ (Q' * Yw);         % |T| x K
         r = Yw - UwT * X_T;
+
         mse = mean(sum(abs(r).^2,1)) / MLr;
     end
+
     Hv_hat(T, :) = X_T;
 end
 
@@ -255,4 +301,64 @@ function R = spectral_efficiency(Hhat, Ns, SNRdB)
         R = R + sum(log2(1 + (SNRlin/Ns) * (s.^2)));
     end
     R = R / K;
+end
+
+%% New Methods for fixing figure 2
+
+function nmse_curve = nmse_vs_M_prefix_avg(SNRdB, M_sweep, Nmc, p)
+    Mmax = max(M_sweep); Lr = p.Lr; K = p.K;
+    Gt = size(p.AT,2); Gr = size(p.AR,2); G = Gt*Gr;
+
+    nmse_acc = zeros(size(M_sweep));
+    for t = 1:Nmc
+        chan_t = generateOnGridChannel(p.Nt,p.Nr,p.K,p.Nc,p.Lpaths, ...
+                                       p.angGridTx,p.angGridRx,1);
+
+        % Prebuild a single long training (length Mmax)
+        Ublk = cell(Mmax,1); Yblk = cell(Mmax,1);
+        for m = 1:Mmax
+            idxF = randi(numel(p.phaseSet), p.Nt*p.Lt, 1);
+            Ftr  = (1/sqrt(p.Nt)) * reshape(exp(1j*p.phaseSet(idxF)), p.Nt, p.Lt);
+            idxW = randi(numel(p.phaseSet), p.Nr*p.Lr, 1);
+            Wtr  = (1/sqrt(p.Nr)) * reshape(exp(1j*p.phaseSet(idxW)), p.Nr, p.Lr);
+
+            q   = ones(p.Lt,1);
+            Fq  = Ftr*q;
+
+            Ttx = q.' * (Ftr.' * conj(p.AT));   % 1 x Gt
+            Trx = (Wtr') * p.AR;                % Lr x Gr
+            U_m = kron(Ttx, Trx);               % Lr x G
+
+            Rm = chol(Wtr'*Wtr, 'upper');       % Lr x Lr
+            Ublk{m} = Rm' \ U_m;                % whitened block (Lr x G)
+
+            Yw_clean_m = zeros(Lr, K);
+            for k = 1:K
+                y = (Wtr') * chan_t.Hk{k} * Fq; % Lr x 1
+                Yw_clean_m(:,k) = Rm' \ y;      % whitened
+            end
+            Yblk{m} = Yw_clean_m;
+        end
+
+        % Sweep prefixes M using the SAME training
+        for iM = 1:numel(M_sweep)
+            M = M_sweep(iM);
+            Uw = zeros(M*Lr, G);
+            Yw_clean = zeros(M*Lr, K);
+            for m = 1:M
+                rows = (m-1)*Lr + (1:Lr);
+                Uw(rows,:)       = Ublk{m};
+                Yw_clean(rows,:) = Yblk{m};
+            end
+
+            sigpow = mean(abs(Yw_clean(:)).^2);
+            sigma2 = sigpow / (10^(SNRdB/10));
+            Yw = Yw_clean + sqrt(sigma2/2).*(randn(size(Yw_clean))+1j*randn(size(Yw_clean)));
+
+            Hv_hat = swomp_joint_fast(Yw, Uw, sigma2, p.Lpaths);  % uses energy aggregation
+            Hhat   = Hv_to_H(Hv_hat, p.AT, p.AR, p.K);
+            nmse_acc(iM) = nmse_acc(iM) + nmse_of_estimate(Hhat, chan_t.Hk);
+        end
+    end
+    nmse_curve = nmse_acc / Nmc;
 end
