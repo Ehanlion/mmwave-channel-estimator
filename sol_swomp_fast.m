@@ -31,22 +31,30 @@ pars = struct('Nt',Nt,'Nr',Nr,'Lt',Lt,'Lr',Lr,'K',K,'Nc',Nc,'Lpaths',Lpaths, ...
               'angGridTx',angGridTx,'angGridRx',angGridRx,'phaseSet',phaseSet, ...
               'AT',AT,'AR',AR);
 
-figure('Name','NMSE vs SNR'); tiledlayout(1,1); ax1=nexttile; hold on; grid on;
+figure('Name','NMSE vs SNR'); tiledlayout(1,1);
+ax1 = nexttile; hold(ax1,'on'); grid(ax1,'on');
+
+markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6, ...
+              'MarkerFaceColor','w','MarkerEdgeColor','w'};
+
 for Mi = 1:numel(M_list)
     M = M_list(Mi);
     nmse_curve = nmse_vs_snr_avg(M, SNRdB_vec, Nmc, pars);
-    plot(ax1, SNRdB_vec, 10*log10(nmse_curve), 'LineWidth', 1.8, ...
+    plot(ax1, SNRdB_vec, 10*log10(nmse_curve), markerArgs{:}, ...
          'DisplayName', sprintf('M=%d',M));
 end
-xlabel('SNR (dB)'); ylabel('NMSE (dB)');
-title('NMSE vs SNR (on-grid AoA/AoD)'); legend('Location','southwest');
+xlabel(ax1,'SNR (dB)'); ylabel(ax1,'NMSE (dB)');
+title(ax1,'NMSE vs SNR (on-grid AoA/AoD)');
+legend(ax1,'Location','southwest');
 
 
 %% ------------------------- Fig 2: NMSE vs M ------------------------------
 M_sweep = 20:5:100;
 SNRdB_set = [-10, -5, 0];
 
-figure('Name','NMSE vs M'); tiledlayout(1,1); ax2=nexttile; hold on; grid on;
+figure('Name','NMSE vs M'); tiledlayout(1,1);
+ax2 = nexttile; hold(ax2,'on'); grid(ax2,'on');
+
 for is = 1:numel(SNRdB_set)
     SNRdB = SNRdB_set(is);
     nmse_vsM = zeros(size(M_sweep));
@@ -59,17 +67,18 @@ for is = 1:numel(SNRdB_set)
         Yw = Yw_clean + sqrt(sigma2/2).*(randn(size(Yw_clean))+1j*randn(size(Yw_clean)));
 
         epsStop = sigma2; 
-        maxIter = Lpaths; % change to Lpath
+        maxIter = Lpaths;
         Hv_hat = swomp_joint_fast(Yw, Uw, epsStop, maxIter);
         Hhat = Hv_to_H(Hv_hat, AT, AR, K);
         nmse_vsM(im) = nmse_of_estimate(Hhat, chan.Hk);
     end
 
-    plot(ax2, M_sweep, 10*log10(nmse_vsM), 'LineWidth',1.8, ...
-         'DisplayName',sprintf('SNR=%d dB',SNRdB));
+    plot(ax2, M_sweep, 10*log10(nmse_vsM), markerArgs{:}, ...
+         'DisplayName', sprintf('SNR=%d dB', SNRdB));
 end
-xlabel('Training frames, M'); ylabel('NMSE (dB)');
-title('NMSE vs number of frames (on-grid AoA/AoD)'); legend('Location','northeast');
+xlabel(ax2,'Training frames, M'); ylabel(ax2,'NMSE (dB)');
+title(ax2,'NMSE vs number of frames (on-grid AoA/AoD)');
+legend(ax2,'Location','northeast');
 
 %% ------------------------- Fig 3: SE vs SNR (M=60) -----------------------
 M = 60;
@@ -88,8 +97,9 @@ for is = 1:numel(SNRdB_vec_SE)
     SE_curve(is) = spectral_efficiency(Hhat, Ns, SNRdB);
 end
 
-figure('Name','Spectral Efficiency'); plot(SNRdB_vec_SE, SE_curve,'-o','LineWidth',1.8);
-grid on; xlabel('SNR (dB)'); ylabel('Spectral Efficiency (bits/s/Hz)');
+figure('Name','Spectral Efficiency'); hold on; grid on;
+plot(SNRdB_vec_SE, SE_curve, markerArgs{:});
+xlabel('SNR (dB)'); ylabel('Spectral Efficiency (bits/s/Hz)');
 title(sprintf('Spectral Efficiency vs SNR (M = %d, Ns = %d)', M, Ns));
 
 end % main
