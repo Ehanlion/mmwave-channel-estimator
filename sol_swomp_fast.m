@@ -164,46 +164,47 @@ legend(ax2,'Location','northeast');
 %    so that perfect-CSI endpoints match the paper (~5 bps/Hz @ −15 dB,
 %    ~25 bps/Hz @ 10 dB). This reconciles normalization differences.
 % -------------------------------------------------------------------------
+
 M = 60;
-SNRdB_vec_SE = -15:5:10;           % paper's SNR tick spacing
-Nmc_SE = 16;                        % average over noise only
+SNRdB_vec_SE = -15:5:10;
+Nmc_SE = 16;
 
 SE_curve = zeros(size(SNRdB_vec_SE));
 
-% Build once for M=60 (fixed channel/training across SNR)
+% Build once for M=60 (fixed channel & training across SNR)
 [Uw_SE, Yw_clean_SE] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR);
 sigpow_SE = mean(abs(Yw_clean_SE(:)).^2);   % whitened-domain signal power
 
 for is = 1:numel(SNRdB_vec_SE)
     SNRdB  = SNRdB_vec_SE(is);
-    sigma2 = sigpow_SE / (10^(SNRdB/10));   % estimation SNR (whitened-domain)
+    sigma2 = sigpow_SE / (10^(SNRdB/10));   % estimation SNR (whitened domain)
 
     Rsum = 0;
     for t = 1:Nmc_SE
-        % fresh noise; same channel/training
         Yw = Yw_clean_SE + sqrt(sigma2/2).*(randn(size(Yw_clean_SE))+1j*randn(size(Yw_clean_SE)));
-
-        % SW-OMP estimate (energy aggregation version)
         epsStop = sigma2; maxIter = Lpaths;
         Hv_hat  = swomp_joint_fast(Yw, Uw_SE, epsStop, maxIter);
-
-        % Reconstruct H and compute SE at the same SNR
-        Hhat = Hv_to_H(Hv_hat, AT, AR, K);
-        Rsum = Rsum + spectral_efficiency(Hhat, Ns, SNRdB);
+        Hhat    = Hv_to_H(Hv_hat, AT, AR, K);
+        Rsum    = Rsum + spectral_efficiency(Hhat, Ns, SNRdB);
     end
     SE_curve(is) = Rsum / Nmc_SE;
 end
 
-% Plot SW-OMP SE + overlay Perfect-CSI SE
+% --- Plot SW-OMP + Perfect-CSI overlay ---
 figure('Name','Spectral Efficiency'); tiledlayout(1,1);
 ax3 = nexttile; hold(ax3,'on'); grid(ax3,'on');
 plot(ax3, SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6, ...
      'MarkerFaceColor','w','MarkerEdgeColor','w', 'DisplayName','SW-OMP');
-overlay_perfect_csi(ax3, chan.Hk, Ns, SNRdB_vec_SE);   % <-- overlay
+overlay_perfect_csi(ax3, chan.Hk, Ns, SNRdB_vec_SE);   % dashed-squares overlay
 
 xlabel(ax3,'SNR (dB)'); ylabel(ax3,'Spectral Efficiency (bits/s/Hz)');
 title(ax3, sprintf('Spectral Efficiency vs. SNR (M = %d, Ns = %d)', M, Ns));
 legend(ax3,'Location','northwest');
+
+% --- OPTIONAL: sanity checks (Perfect-CSI vs SW-OMP, plus NMSE)
+% To run diagnostics, just uncomment the next line:
+% se_nmse_diagnostics(chan, Ns, SNRdB_vec_SE, Nt,Nr,Lt,Lr,M,K,phaseSet,AT,AR,Lpaths);
+
 
 end % main
 
@@ -378,8 +379,7 @@ end
 
 %% Helpers to diagnose the figure 3 endpoint mismatch error
 function SE_curve = perfect_csi_se_curve(Hk_cell, Ns, SNRdB_vec)
-% PERFECT-CSI spectral efficiency (no estimation): just plug Hk into
-% your existing spectral_efficiency() for each SNR point.
+% PERFECT-CSI spectral efficiency (no estimation): evaluate directly on Hk.
     SE_curve = zeros(size(SNRdB_vec));
     for i = 1:numel(SNRdB_vec)
         SE_curve(i) = spectral_efficiency(Hk_cell, Ns, SNRdB_vec(i));
@@ -387,11 +387,48 @@ function SE_curve = perfect_csi_se_curve(Hk_cell, Ns, SNRdB_vec)
 end
 
 function h = overlay_perfect_csi(ax, Hk_cell, Ns, SNRdB_vec)
-% Convenience wrapper: compute + plot Perfect-CSI curve on the given axes.
+% Compute + plot Perfect-CSI SE on the given axes.
     SE_csi = perfect_csi_se_curve(Hk_cell, Ns, SNRdB_vec);
-    hold(ax,'on');
     h = plot(ax, SNRdB_vec, SE_csi, '--s', ...
-        'LineWidth', 1.8, 'MarkerSize', 6, ...
-        'MarkerFaceColor', 'w', 'MarkerEdgeColor', 'w', ...
-        'DisplayName', 'Perfect CSI');
+             'LineWidth', 1.8, 'MarkerSize', 6, ...
+             'MarkerFaceColor', 'w', 'MarkerEdgeColor', 'w', ...
+             'DisplayName', 'Perfect CSI');
+end
+
+function se_nmse_diagnostics(chan, Ns, SNRdB_vec, Nt,Nr,Lt,Lr,M,K,phaseSet,AT,AR,Lpaths)
+% Prints a table with SW-OMP SE, Perfect-CSI SE, their gap, and NMSE.
+% This recomputes SW-OMP SE & NMSE with averaging so it doesn't depend on
+% state outside and can be called any time.
+
+    Nmc = 16;                                   % averaging for stability
+    [Uw, Yw_clean] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR);
+    sigpow = mean(abs(Yw_clean(:)).^2);
+
+    SE_sw  = zeros(size(SNRdB_vec));
+    NMSE   = zeros(size(SNRdB_vec));
+
+    for is = 1:numel(SNRdB_vec)
+        SNRdB  = SNRdB_vec(is);
+        sigma2 = sigpow / (10^(SNRdB/10));
+
+        Rsum = 0; nmse_acc = 0;
+        for t = 1:Nmc
+            Yw = Yw_clean + sqrt(sigma2/2).*(randn(size(Yw_clean))+1j*randn(size(Yw_clean)));
+            epsStop = sigma2; maxIter = Lpaths;
+            Hv_hat  = swomp_joint_fast(Yw, Uw, epsStop, maxIter);
+            Hhat    = Hv_to_H(Hv_hat, AT, AR, K);
+
+            Rsum     = Rsum + spectral_efficiency(Hhat, Ns, SNRdB);
+            nmse_acc = nmse_acc + nmse_of_estimate(Hhat, chan.Hk);
+        end
+        SE_sw(is) = Rsum / Nmc;
+        NMSE(is)  = nmse_acc / Nmc;
+    end
+
+    SE_perf = perfect_csi_se_curve(chan.Hk, Ns, SNRdB_vec);
+    SE_gap  = SE_perf - SE_sw;
+    NMSE_dB = 10*log10(NMSE + eps);
+
+    disp(table(SNRdB_vec(:), SE_sw(:), SE_perf(:), SE_gap(:), NMSE_dB(:), ...
+        'VariableNames', {'SNR_dB','SE_SWOMP','SE_Perfect','SE_Gap','NMSE_dB'}));
 end
