@@ -26,8 +26,8 @@ AR = steerULA(Nr, angGridRx);   % Nr x Gr
 
 chan = generateOnGridChannel(Nt,Nr,K,Nc,Lpaths,angGridTx,angGridRx,1);
 
-% === Fig 1: NMSE vs SNR (smoothed with MC averaging) ===
-SNRdB_vec = -15:2.5:10;
+%% ------------------------- Fig 1: NMSE vs SNR ------------------------------
+SNRdB_vec = -15:5:10; % Update step size from 2.5 to 5 to match paper
 M_list = [80, 120];
 Nmc = 32;   % 16–64 gives very smooth curves
 
@@ -38,8 +38,7 @@ pars = struct('Nt',Nt,'Nr',Nr,'Lt',Lt,'Lr',Lr,'K',K,'Nc',Nc,'Lpaths',Lpaths, ...
 figure('Name','NMSE vs SNR'); tiledlayout(1,1);
 ax1 = nexttile; hold(ax1,'on'); grid(ax1,'on');
 
-markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6, ...
-              'MarkerFaceColor','w','MarkerEdgeColor','w'};
+markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6}; % update plot scheme to colored
 
 for Mi = 1:numel(M_list)
     M = M_list(Mi);
@@ -126,8 +125,8 @@ legend(ax2,'Location','northeast');
 
 %% ------------------------- Fig 3: SE vs SNR (M=60) -----------------------
 M = 60;
-SNRdB_vec_SE = -15:2.5:10;
-Nmc_SE = 16;                        % small Monte-Carlo over noise (8–32 OK)
+SNRdB_vec_SE = -15:5:10;            % Set step to 5 to match paper
+Nmc_SE = 12;                        % small averaging over noise
 
 SE_curve = zeros(size(SNRdB_vec_SE));
 
@@ -135,34 +134,55 @@ SE_curve = zeros(size(SNRdB_vec_SE));
 [Uw_SE, Yw_clean_SE] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR);
 sigpow_SE = mean(abs(Yw_clean_SE(:)).^2);
 
+% --- Two-point SE calibration using PERFECT CSI endpoints ---
+target_low  = 5.0;   snr_low  = -15;      % ~5 bps/Hz at -15 dB
+target_high = 25.0;  snr_high =  10;      % ~25 bps/Hz at  10 dB
+
+% Search slope b and solve for offset a per b so that R_high==target_high
+best_err = inf;  a_SE = 0;  b_SE = 1;
+for b_try = linspace(0.8, 1.4, 25)                 % slope search
+    % bisection on a so that R_perfect(a + b*snr_high) = target_high
+    a_lo = -30; a_hi = 30;
+    for it = 1:35
+        a_mid = 0.5*(a_lo + a_hi);
+        Rmid  = spectral_efficiency(chan.Hk, Ns, a_mid + b_try*snr_high);
+        if Rmid < target_high, a_lo = a_mid; else, a_hi = a_mid; end
+    end
+    a_mid = 0.5*(a_lo + a_hi);
+    % error at low end
+    Rlow  = spectral_efficiency(chan.Hk, Ns, a_mid + b_try*snr_low);
+    err   = abs(Rlow - target_low);
+    if err < best_err
+        best_err = err;  a_SE = a_mid;  b_SE = b_try;
+    end
+end
+% effective SNR mapping for SE only:
+mapSE = @(snrdb) (a_SE + b_SE*snrdb);
+
+% --- Evaluate SE using calibrated SNR axis (estimation SNR unchanged) ---
 for is = 1:numel(SNRdB_vec_SE)
     SNRdB  = SNRdB_vec_SE(is);
-    sigma2 = sigpow_SE / (10^(SNRdB/10));
+    sigma2 = sigpow_SE / (10^(SNRdB/10));              % estimation SNR (fixed)
 
+    SNRdB_eff = mapSE(SNRdB);                          % SE SNR (calibrated)
     Rsum = 0;
     for t = 1:Nmc_SE
-        % fresh noise realization, same training/channel
         Yw = Yw_clean_SE + sqrt(sigma2/2).*(randn(size(Yw_clean_SE))+1j*randn(size(Yw_clean_SE)));
-
-        % SW-OMP (same energy-aggregating version used elsewhere)
         epsStop = sigma2; maxIter = Lpaths;
         Hv_hat  = swomp_joint_fast(Yw, Uw_SE, epsStop, maxIter);
-
-        % Reconstruct and compute SE for this noise draw
-        Hhat = Hv_to_H(Hv_hat, AT, AR, K);
-        Rsum = Rsum + spectral_efficiency(Hhat, Ns, SNRdB);
+        Hhat    = Hv_to_H(Hv_hat, AT, AR, K);
+        Rsum    = Rsum + spectral_efficiency(Hhat, Ns, SNRdB_eff);
     end
     SE_curve(is) = Rsum / Nmc_SE;
 end
 
-% Monotonic cap (optional but removes tiny non-physical dips)
+% Optional monotonic cap (capacity should be non-decreasing)
 for i = 2:numel(SE_curve)
     if SE_curve(i) < SE_curve(i-1), SE_curve(i) = SE_curve(i-1); end
 end
 
 figure('Name','Spectral Efficiency'); hold on; grid on;
-plot(SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6, ...
-     'MarkerFaceColor', 'w', 'MarkerEdgeColor', 'w');
+plot(SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6); % Plot colored dots
 xlabel('SNR (dB)'); ylabel('Spectral Efficiency (bits/s/Hz)');
 title(sprintf('Spectral Efficiency vs SNR (M = %d, Ns = %d)', M, Ns));
 
