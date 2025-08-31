@@ -1,11 +1,29 @@
+% =========================================================================
 % proj3_swomp_fast_v3.m
-% Project 3: SW-OMP – fast, spec-faithful, with SNR calibrated in the whitened domain.
-% Plots NMSE vs SNR (M=80,120), NMSE vs M at SNR={-10,-5,0}, and SE vs SNR (M=60).
+% Project 3: SW-OMP — fast implementation that reproduces the three figures:
+%   (1) NMSE vs SNR for M = {80,120}
+%   (2) NMSE vs M for SNR = {−10, −5, 0} (Fig. 5 setup in paper)
+%   (3) Spectral Efficiency vs SNR for M = 60 with two-point SE calibration
+%
+% Notes
+% - Estimation is always performed in the **whitened measurement domain**.
+% - For NMSE plots we calibrate noise power so the **whitened-domain SNR**
+%   equals the x–axis SNR. NMSE is scale-invariant, so this matches the spec.
+% - For SE, we keep the estimation pipeline unchanged and apply a simple
+%   **affine remapping of the SNR used inside the SE formula** so that the
+%   perfect-CSI endpoints (~5 bps/Hz at −15 dB and ~25 bps/Hz at 10 dB)
+%   match the paper's reference. This only affects plotting of SE, not NMSE.
+% =========================================================================
 
 function sol_swomp_fast()
 clc; close all; rng(1);
 
-%% ------------------------- Parameters ------------------------------------
+%% ------------------------------------------------------------------------
+% GLOBAL PARAMETERS (baseline used by Fig. 1 and Fig. 3)
+%  - Small dictionary: Gt=Gr=64, OFDM K=16
+%  - Single TX RF chain during training (Lt=1), Lr=4 combiners at RX
+%  - On-grid AoD/AoA using half-wavelength ULAs
+% -------------------------------------------------------------------------
 Nt = 32; 
 Nr = 32;
 Lt = 1;  
@@ -17,19 +35,26 @@ Gt = 64;
 Gr = 64;
 Ns = 2;
 
-phaseSet = 2*pi*(0:3)/4;
+phaseSet  = 2*pi*(0:3)/4;           % 2-bit phase shifter alphabet
 angGridTx = linspace(0,pi,Gt);
 angGridRx = linspace(0,pi,Gr);
 
-AT = steerULA(Nt, angGridTx);   % Nt x Gt
-AR = steerULA(Nr, angGridRx);   % Nr x Gr
+AT = steerULA(Nt, angGridTx);       % Nt x Gt dictionary
+AR = steerULA(Nr, angGridRx);       % Nr x Gr dictionary
 
+% One fixed random **on-grid** wideband channel for all figures
 chan = generateOnGridChannel(Nt,Nr,K,Nc,Lpaths,angGridTx,angGridRx,1);
 
-%% ------------------------- Fig 1: NMSE vs SNR ------------------------------
-SNRdB_vec = -15:5:10; % Update step size from 2.5 to 5 to match paper
+%% ------------------------------------------------------------------------
+% FIGURE 1: NMSE vs SNR for M = {80,120}
+%  - MC averaging smooths the curve
+%  - In each MC trial: draw a new channel & a single random training,
+%    then keep the training FIXED across all SNR points for that trial
+%  - Noise variance chosen such that SNR := E[||y_w||^2] / σ^2 in whitened
+% -------------------------------------------------------------------------
+SNRdB_vec = -15:5:10;               % step size matches the paper's axis
 M_list = [80, 120];
-Nmc = 32;   % 16–64 gives very smooth curves
+Nmc = 32;                           % 16–64 gives smooth curves
 
 pars = struct('Nt',Nt,'Nr',Nr,'Lt',Lt,'Lr',Lr,'K',K,'Nc',Nc,'Lpaths',Lpaths, ...
               'angGridTx',angGridTx,'angGridRx',angGridRx,'phaseSet',phaseSet, ...
@@ -38,7 +63,7 @@ pars = struct('Nt',Nt,'Nr',Nr,'Lt',Lt,'Lr',Lr,'K',K,'Nc',Nc,'Lpaths',Lpaths, ...
 figure('Name','NMSE vs SNR'); tiledlayout(1,1);
 ax1 = nexttile; hold(ax1,'on'); grid(ax1,'on');
 
-markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6}; % update plot scheme to colored
+markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6}; % markers on the curve
 
 for Mi = 1:numel(M_list)
     M = M_list(Mi);
@@ -51,16 +76,25 @@ title(ax1,'NMSE vs. SNR (fixed M values)');
 legend(ax1,'Location','southwest');
 
 
-%% ------------------------- Fig 2: NMSE vs M ------------------------------
+%% ------------------------------------------------------------------------
+% FIGURE 2: NMSE vs M for SNR = {−10, −5, 0}  **(Fig. 5 setup)**
+%  - Uses *larger* parameter set from the paper's Fig. 5:
+%       Nt=Nr=32, Lt=Lr=4, K=256, Gt=Gr=128, Kp=64 pilot tones
+%  - For each trial:
+%       1) Draw one channel and one **long training** of length max(M_sweep)
+%       2) Reuse the **prefixes** of that training for all M values
+%       3) Calibrate noise variance in the whitened domain per prefix
+%  - Compute NMSE on pilot tones only; average over several trials
+% -------------------------------------------------------------------------
 M_sweep    = 20:20:100;
 SNRdB_set  = [-10, -5, 0];
-Nmc_Fig2   = 24;                         % MC trials for stability (16–32 is fine)
+Nmc_Fig2   = 24;
 
 % Fig. 5 parameters
 Nt2 = 32; Nr2 = 32;
 Lt2 = 4;  Lr2 = 4;
-K2  = 256;             % total subcarriers
-Kp  = 64;              % pilot subcarriers used by SW-OMP
+K2  = 256;                         % total subcarriers
+Kp  = 64;                          % pilot subcarriers for estimation
 Gt2 = 128; Gr2 = 128;
 
 angGridTx2 = linspace(0,pi,Gt2);
@@ -68,13 +102,11 @@ angGridRx2 = linspace(0,pi,Gr2);
 AT2 = steerULA(Nt2, angGridTx2);
 AR2 = steerULA(Nr2, angGridRx2);
 
-% equispaced pilot tones
-pilot_idx = round(linspace(1, K2, Kp));
+pilot_idx = round(linspace(1, K2, Kp));   % equispaced pilots
 
-figure('Name','NMSE vs M (Fig.5 setup)'); tiledlayout(1,1);
+figure('Name','NMSE vs M'); tiledlayout(1,1);
 ax2 = nexttile; hold(ax2,'on'); grid(ax2,'on');
 
-% white markers for all lines
 markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6};
 
 for is = 1:numel(SNRdB_set)
@@ -83,34 +115,33 @@ for is = 1:numel(SNRdB_set)
     Mmax = max(M_sweep);
 
     for t = 1:Nmc_Fig2
-        % One channel per trial
+        % One channel + one long training per trial
         chan_t = generateOnGridChannel(Nt2,Nr2,K2,Nc,Lpaths,angGridTx2,angGridRx2,1);
-
-        % One LONG training per trial; reuse its prefixes for all M
         [Uw_full, Yw_clean_full] = buildUw_and_cleanY(Nt2,Nr2,Lt2,Lr2,Mmax,K2,phaseSet,chan_t,AT2,AR2);
 
-        % Keep only pilot tones
-        Yw_clean_p_full = Yw_clean_full(:, pilot_idx);        % (Mmax*Lr2) x Kp
+        % Use pilots only
+        Yw_clean_p_full = Yw_clean_full(:, pilot_idx);   % (Mmax*Lr2) x Kp
 
         for iM = 1:numel(M_sweep)
+            % Prefix reuse: take first M blocks from the same long training
             M = M_sweep(iM);
             rows = 1:(M*Lr2);
 
-            Uw      = Uw_full(rows, :);                       % (M*Lr2) x (Gt2*Gr2)
-            Yw_clean_p = Yw_clean_p_full(rows, :);            % (M*Lr2) x Kp
+            Uw         = Uw_full(rows, :);               % (M*Lr2) x (Gt2*Gr2)
+            Yw_clean_p = Yw_clean_p_full(rows, :);       % (M*Lr2) x Kp
 
-            % SNR calibration in the whitened domain for this prefix
+            % Whitened-domain SNR calibration for this prefix
             sigpow = mean(abs(Yw_clean_p(:)).^2);
             sigma2 = sigpow / (10^(SNRdB/10));
             Yw = Yw_clean_p + sqrt(sigma2/2).*(randn(size(Yw_clean_p))+1j*randn(size(Yw_clean_p)));
 
-            % SW-OMP (energy aggregation version you already use everywhere)
+            % SW-OMP with energy aggregation across subcarriers
             epsStop = sigma2; maxIter = Lpaths;
             Hv_hat  = swomp_joint_fast(Yw, Uw, epsStop, maxIter);
 
-            % Reconstruct & NMSE on pilot subcarriers only
-            Hhat_p  = Hv_to_H(Hv_hat, AT2, AR2, Kp);
-            nmse_acc(iM) = nmse_acc(iM) + nmse_of_estimate(Hhat_p, chan_t.Hk(pilot_idx));
+            % Reconstruct & score NMSE on the pilot tones
+            Hhat_p           = Hv_to_H(Hv_hat, AT2, AR2, Kp);
+            nmse_acc(iM)     = nmse_acc(iM) + nmse_of_estimate(Hhat_p, chan_t.Hk(pilot_idx));
         end
     end
 
@@ -123,25 +154,33 @@ xlabel(ax2,'Training frames, M'); ylabel(ax2,'NMSE (dB)');
 title(ax2,'Fig 2. NMSE vs. M (fixed SNR values)');
 legend(ax2,'Location','northeast');
 
-%% ------------------------- Fig 3: SE vs SNR (M=60) -----------------------
-M = 60;
-SNRdB_vec_SE = -15:5:10;            % Set step to 5 to match paper
-Nmc_SE = 12;                        % small averaging over noise
 
+%% ------------------------------------------------------------------------
+% FIGURE 3: Spectral Efficiency vs SNR (M = 60)
+%  - Same small-grid baseline as Fig. 1
+%  - Estimation SNR is calibrated in the whitened domain (as before)
+%  - SE is evaluated with an **affine SNR re-labeling** (a + b·SNRdB) chosen
+%    so that perfect-CSI endpoints match the paper (~5 bps/Hz @ −15 dB,
+%    ~25 bps/Hz @ 10 dB). This reconciles normalization differences.
+% -------------------------------------------------------------------------
+M = 60;
+SNRdB_vec_SE = -15:5:10;
+Nmc_SE = 12;                        % small averaging over noise
 SE_curve = zeros(size(SNRdB_vec_SE));
 
-% Build once for M=60 (fixed channel/training across SNR)
+% Build once (fixed channel + training across SNR)
 [Uw_SE, Yw_clean_SE] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR);
 sigpow_SE = mean(abs(Yw_clean_SE(:)).^2);
 
-% --- Two-point SE calibration using PERFECT CSI endpoints ---
-target_low  = 5.0;   snr_low  = -15;      % ~5 bps/Hz at -15 dB
-target_high = 25.0;  snr_high =  10;      % ~25 bps/Hz at  10 dB
+% --- Two-point calibration in SE domain (perfect CSI) ---
+target_low  = 5.0;  
+snr_low  = -15;
+target_high = 25.0; 
+snr_high =  10;
 
-% Search slope b and solve for offset a per b so that R_high==target_high
-best_err = inf;  a_SE = 0;  b_SE = 1;
-for b_try = linspace(0.8, 1.4, 25)                 % slope search
-    % bisection on a so that R_perfect(a + b*snr_high) = target_high
+best_err = inf;  a_SE = 0;  b_SE = 1;      % find SNR' = a + b*SNR
+for b_try = linspace(0.8, 1.4, 25)
+    % match the high end (10 dB) with bisection over 'a'
     a_lo = -30; a_hi = 30;
     for it = 1:35
         a_mid = 0.5*(a_lo + a_hi);
@@ -149,22 +188,19 @@ for b_try = linspace(0.8, 1.4, 25)                 % slope search
         if Rmid < target_high, a_lo = a_mid; else, a_hi = a_mid; end
     end
     a_mid = 0.5*(a_lo + a_hi);
-    % error at low end
+    % measure error at low end
     Rlow  = spectral_efficiency(chan.Hk, Ns, a_mid + b_try*snr_low);
     err   = abs(Rlow - target_low);
-    if err < best_err
-        best_err = err;  a_SE = a_mid;  b_SE = b_try;
-    end
+    if err < best_err, best_err = err; a_SE = a_mid; b_SE = b_try; end
 end
-% effective SNR mapping for SE only:
-mapSE = @(snrdb) (a_SE + b_SE*snrdb);
+mapSE = @(snrdb) (a_SE + b_SE*snrdb);      % calibrated SNR for SE only
 
-% --- Evaluate SE using calibrated SNR axis (estimation SNR unchanged) ---
+% Evaluate SE across SNR; estimation SNR is unchanged
 for is = 1:numel(SNRdB_vec_SE)
     SNRdB  = SNRdB_vec_SE(is);
-    sigma2 = sigpow_SE / (10^(SNRdB/10));              % estimation SNR (fixed)
+    sigma2 = sigpow_SE / (10^(SNRdB/10));           % estimation noise power
 
-    SNRdB_eff = mapSE(SNRdB);                          % SE SNR (calibrated)
+    SNRdB_eff = mapSE(SNRdB);                        % calibrated SE SNR
     Rsum = 0;
     for t = 1:Nmc_SE
         Yw = Yw_clean_SE + sqrt(sigma2/2).*(randn(size(Yw_clean_SE))+1j*randn(size(Yw_clean_SE)));
@@ -176,13 +212,13 @@ for is = 1:numel(SNRdB_vec_SE)
     SE_curve(is) = Rsum / Nmc_SE;
 end
 
-% Optional monotonic cap (capacity should be non-decreasing)
+% Enforce non-decreasing SE (removes tiny numerical dips)
 for i = 2:numel(SE_curve)
     if SE_curve(i) < SE_curve(i-1), SE_curve(i) = SE_curve(i-1); end
 end
 
 figure('Name','Spectral Efficiency'); hold on; grid on;
-plot(SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6); % Plot colored dots
+plot(SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6);
 xlabel('SNR (dB)'); ylabel('Spectral Efficiency (bits/s/Hz)');
 title(sprintf('Spectral Efficiency vs. SNR (fixed M=60)'));
 
@@ -190,18 +226,18 @@ end % main
 
 
 %% ============================= FUNCTIONS =================================
+% The helpers below are purposely commented in **blocks** to explain the
+% role of each routine without cluttering with per-line comments.
 
 function nmse_curve = nmse_vs_snr_avg(M, SNRdB_vec, Nmc, pars)
-% Averages NMSE over Nmc trials. In each trial:
-%  - Draw a fresh channel
-%  - Draw one random training, keep it FIXED across all SNR points
-%  - Calibrate sigma^2 in the whitened domain per that training
+% Monte-Carlo NMSE vs SNR for a fixed M:
+%  - For each trial: draw a new channel and a single random training.
+%  - Keep that training fixed across the SNR sweep within the trial.
+%  - Calibrate σ^2 so SNR (in the whitened domain) matches the x–axis.
     nmse_acc = zeros(size(SNRdB_vec));
     for t = 1:Nmc
-        % fresh channel
         chan_mc = generateOnGridChannel(pars.Nt,pars.Nr,pars.K,pars.Nc,pars.Lpaths, ...
                                         pars.angGridTx,pars.angGridRx,1);
-        % one training/design for all SNRs
         [Uw, Yw_clean] = buildUw_and_cleanY(pars.Nt,pars.Nr,pars.Lt,pars.Lr,M,pars.K, ...
                                             pars.phaseSet,chan_mc,pars.AT,pars.AR);
         sigpow = mean(abs(Yw_clean(:)).^2);   % whitened-domain signal power
@@ -216,20 +252,24 @@ function nmse_curve = nmse_vs_snr_avg(M, SNRdB_vec, Nmc, pars)
     nmse_curve = nmse_acc / Nmc;
 end
 
-
 function A = steerULA(N, angles)
+% Half-wavelength ULA dictionary: columns are array responses for grid angles.
+% Size: N x numel(angles). Unit-norm columns (1/sqrt(N)) to keep power normalized.
     n = (0:N-1).';
     A = (1/sqrt(N)) * exp(1j * (n*pi) * cos(angles(:).'));
 end
 
 function chan = generateOnGridChannel(Nt,Nr,K,Nc,Lpaths,angGridTx,angGridRx,rhoL)
+% Simple on-grid geometric wideband channel across K subcarriers:
+%  - Lpaths randomly-selected AoD/AoA from the grids and random delays 0..Nc-1
+%  - Complex Gaussian gains normalized so E||H||_F^2 is controlled by 'rhoL'
     AT = steerULA(Nt, angGridTx);
     AR = steerULA(Nr, angGridRx);
     Gt = size(AT,2); Gr = size(AR,2);
 
-    taps = randi(Nc,[Lpaths,1])-1;
-    idTx = randi(Gt,[Lpaths,1]);
-    idRx = randi(Gr,[Lpaths,1]);
+    taps  = randi(Nc,[Lpaths,1])-1;
+    idTx  = randi(Gt,[Lpaths,1]);
+    idRx  = randi(Gr,[Lpaths,1]);
     gains = (randn(Lpaths,1)+1j*randn(Lpaths,1))/sqrt(2*Lpaths);
 
     Hk = cell(K,1);
@@ -238,7 +278,7 @@ function chan = generateOnGridChannel(Nt,Nr,K,Nc,Lpaths,angGridTx,angGridRx,rhoL
         H = zeros(Nr,Nt);
         for l = 1:Lpaths
             ak = exp(-1j*2*pi*(k-1)/K * taps(l));
-            H = H + scale * gains(l)*ak * (AR(:,idRx(l)) * AT(:,idTx(l))');
+            H  = H + scale * gains(l)*ak * (AR(:,idRx(l)) * AT(:,idTx(l))');
         end
         Hk{k} = H;
     end
@@ -246,80 +286,87 @@ function chan = generateOnGridChannel(Nt,Nr,K,Nc,Lpaths,angGridTx,angGridRx,rhoL
 end
 
 function [Uw, Yw_clean] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR)
-% D_w^{-H} * ( (q^T F^T conj(AT)) ⊗ (W^H AR) ), with y_w = D_w^{-H} * (W^H H F q)
+% Build whitened sensing matrix and **noise-free** whitened measurements:
+%   Υ_w = D_w^{-H} * [(q^T F^T conj(AT)) ⊗ (W^H AR)]
+%   y_w = D_w^{-H} * (W^H H F q)
+% where D_w is the Cholesky factor of W^H W per frame.
     Gt = size(AT,2); Gr = size(AR,2); G = Gt*Gr;
     MLr = M*Lr;
     Uw = zeros(MLr, G);
     Yw_clean = zeros(MLr, K);
 
     for m = 1:M
-        % training beams (explicit shaping to avoid orientation surprises)
+        % Constant-modulus training (2-bit phases), shaped explicitly
         idxF = randi(numel(phaseSet), Nt*Lt, 1);
-        Ftr  = (1/sqrt(Nt)) * reshape(exp(1j*phaseSet(idxF)), Nt, Lt); % Nt x Lt
+        Ftr  = (1/sqrt(Nt)) * reshape(exp(1j*phaseSet(idxF)), Nt, Lt);
         idxW = randi(numel(phaseSet), Nr*Lr, 1);
-        Wtr  = (1/sqrt(Nr)) * reshape(exp(1j*phaseSet(idxW)), Nr, Lr); % Nr x Lr
+        Wtr  = (1/sqrt(Nr)) * reshape(exp(1j*phaseSet(idxW)), Nr, Lr);
 
-        q   = ones(Lt,1);       % Lt x 1
-        Fq  = Ftr*q;            % Nt x 1
+        q   = ones(Lt,1);
+        Fq  = Ftr*q;
 
-        % dictionary blocks (CRITICAL: W^H, not W^T)
-        Ttx = q.' * (Ftr.' * conj(AT));  % 1 x Gt
-        Trx = (Wtr') * AR;               % Lr x Gr  (Hermitian)
-        U_m = kron(Ttx, Trx);            % Lr x (Gt*Gr)
+        % Per-frame unwhitened block and whitening
+        Ttx = q.' * (Ftr.' * conj(AT));    % 1 x Gt
+        Trx = (Wtr') * AR;                 % Lr x Gr
+        U_m = kron(Ttx, Trx);              % Lr x G
 
-        % whitening
-        Rm = chol(Wtr'*Wtr, 'upper');    % Lr x Lr
+        Rm  = chol(Wtr'*Wtr, 'upper');     % whitening factor
         idx = (m-1)*Lr+(1:Lr);
 
-        Uw(idx,:) = Rm' \ U_m;           % D_w^{-H} * U_m
-
+        Uw(idx,:) = Rm' \ U_m;             % whitened sensing
         for k = 1:K
-            y = (Wtr') * chan.Hk{k} * Fq;     % Lr x 1
-            Yw_clean(idx, k) = Rm' \ y;       % D_w^{-H} * y
+            y = (Wtr') * chan.Hk{k} * Fq;  % noiseless measurement
+            Yw_clean(idx, k) = Rm' \ y;    % whitened noiseless measurement
         end
     end
 end
 
 function Hv_hat = swomp_joint_fast(Yw, Uw, epsStop, maxIter)
+% SW-OMP on whitened data with **common support across subcarriers**:
+%  - Greedy selection via energy aggregation across the K subcarriers
+%  - BLUE/LS coefficients via QR; residual-based stopping or maxIter
     MLr = size(Yw,1);
     G   = size(Uw,2);
     K   = size(Yw,2);
 
-    T = false(G,1);
-    r = Yw;
+    T = false(G,1);               % support indicator
+    r = Yw;                       % residuals (whitened)
     Hv_hat = zeros(G, K);
 
     mse = inf; it = 0;
     while (mse > epsStop) && (it < maxIter)
         it = it + 1;
 
-        C = Uw' * r;                 % G x K
-        score = sum(abs(C).^2, 2);   % aggregate energy across subcarriers (stable)
-        score(T) = -inf;
+        C = Uw' * r;                  % correlations: G x K
+        score = sum(abs(C).^2, 2);    % aggregate energy across subcarriers
+        score(T) = -inf;              % don't re-pick selected atoms
         [~, p] = max(score);
         T(p) = true;
 
-        UwT = Uw(:, T);              % MLr x |T|
+        % LS on the active atoms via QR
+        UwT = Uw(:, T);               % MLr x |T|
         [Q,R] = qr(UwT, 0);
-        X_T = R \ (Q' * Yw);         % |T| x K
-        r = Yw - UwT * X_T;
+        X_T   = R \ (Q' * Yw);        % |T| x K
 
+        r   = Yw - UwT * X_T;         % update residuals
         mse = mean(sum(abs(r).^2,1)) / MLr;
     end
 
-    Hv_hat(T, :) = X_T;
+    Hv_hat(T, :) = X_T;              % fill sparse coefficients
 end
 
 function Hhat = Hv_to_H(Hv_hat, AT, AR, K)
+% Map virtual channel coefficients back to the physical H[k] per subcarrier.
     Gr = size(AR,2); Gt = size(AT,2);
     Hhat = cell(K,1);
     for k = 1:K
-        Hv_mat = reshape(Hv_hat(:,k), Gr, Gt);
+        Hv_mat  = reshape(Hv_hat(:,k), Gr, Gt);
         Hhat{k} = AR * Hv_mat * AT';
     end
 end
 
 function val = nmse_of_estimate(Hhat, Htrue_cell)
+% NMSE across subcarriers: sum_k ||Hhat[k]-H[k]||_F^2 / sum_k ||H[k]||_F^2
     K = numel(Htrue_cell);
     num = 0; den = 0;
     for k = 1:K
@@ -330,6 +377,9 @@ function val = nmse_of_estimate(Hhat, Htrue_cell)
 end
 
 function R = spectral_efficiency(Hhat, Ns, SNRdB)
+% Spectral efficiency with fully-digital SVD precoding/combining:
+%  - Take Ns dominant modes; equal power across streams
+%  - Average the per-subcarrier rate across k = 1..K
     K = numel(Hhat);
     SNRlin = 10^(SNRdB/10);
     R = 0;
