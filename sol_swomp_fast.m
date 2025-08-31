@@ -24,16 +24,17 @@ clc; close all; rng(1);
 %  - Single TX RF chain during training (Lt=1), Lr=4 combiners at RX
 %  - On-grid AoD/AoA using half-wavelength ULAs
 % -------------------------------------------------------------------------
-Nt = 32; 
-Nr = 32;
-Lt = 1;  
-Lr = 4;
-K  = 16;
-Nc = 4;  
-Lpaths = 4;
-Gt = 64; 
-Gr = 64;
-Ns = 2;
+Nt = 32;   % # TX antennas (array size at the transmitter); sets H dimension Nr×Nt and AT size
+Nr = 32;   % # RX antennas (array size at the receiver); sets H dimension Nr×Nt and AR size
+Lt = 1;    % # TX RF chains during training (pilot streams per frame); affects sensing matrix columns via Ftr*q
+Lr = 4;    % # RX RF chains (combiners) during training; equals measurements per frame (rows added per frame)
+K  = 16;   % # OFDM subcarriers simulated; number of per-subcarrier channels H{k}
+Nc = 4;    % # delay taps in the wideband channel; controls frequency selectivity across subcarriers
+Lpaths = 4;% # physical propagation paths; target sparsity level for SW-OMP (typical maxIter)
+Gt = 64;   % AoD dictionary size (angular grid resolution at TX); columns in AT and AoD bins for sparsity
+Gr = 64;   % AoA dictionary size (angular grid resolution at RX); columns in AR and AoA bins for sparsity
+Ns = 2;    % # data streams used when computing spectral efficiency (SVD-based rate with Ns modes)
+
 
 phaseSet  = 2*pi*(0:3)/4;           % 2-bit phase shifter alphabet
 angGridTx = linspace(0,pi,Gt);
@@ -90,17 +91,18 @@ M_sweep    = 20:20:100;
 SNRdB_set  = [-10, -5, 0];
 Nmc_Fig2   = 24;
 
-% Fig. 5 parameters
-Nt2 = 32; Nr2 = 32;
-Lt2 = 4;  Lr2 = 4;
-K2  = 256;                         % total subcarriers
-Kp  = 64;                          % pilot subcarriers for estimation
-Gt2 = 128; Gr2 = 128;
+% Fig. 5 parameters (large scenario used ONLY for Fig. 2)
+Nt2 = 32; Nr2 = 32;     % TX/RX antenna counts (same as baseline), set sizes of AT2/AR2 and H{k}
+Lt2 = 4;  Lr2 = 4;      % Training RF chains (more TX streams + RX combiners → stronger per-frame measurements)
+K2  = 256;              % Total OFDM subcarriers in the large scenario (denser frequency grid)
+Kp  = 64;               % # pilot subcarriers actually used for estimation/NMSE (subset of K2)
+Gt2 = 128; Gr2 = 128;   % Finer AoD/AoA grids (higher-resolution dictionaries) for the large scenario
 
-angGridTx2 = linspace(0,pi,Gt2);
-angGridRx2 = linspace(0,pi,Gr2);
-AT2 = steerULA(Nt2, angGridTx2);
-AR2 = steerULA(Nr2, angGridRx2);
+angGridTx2 = linspace(0,pi,Gt2); % Uniform AoD grid [0,π] with Gt2 points (steering angles at TX)
+angGridRx2 = linspace(0,pi,Gr2); % Uniform AoA grid [0,π] with Gr2 points (steering angles at RX)
+AT2 = steerULA(Nt2, angGridTx2); % TX steering dictionary (Nt2×Gt2) for a λ/2 ULA; unit-norm columns
+AR2 = steerULA(Nr2, angGridRx2); % RX steering dictionary (Nr2×Gr2) for a λ/2 ULA; unit-norm columns
+
 
 pilot_idx = round(linspace(1, K2, Kp));   % equispaced pilots
 
