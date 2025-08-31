@@ -167,56 +167,34 @@ legend(ax2,'Location','northeast');
 % -------------------------------------------------------------------------
 M = 60;
 SNRdB_vec_SE = -15:5:10;
-Nmc_SE = 12;                        % small averaging over noise
+Nmc_SE = 16;                        % small averaging over noise only
+
 SE_curve = zeros(size(SNRdB_vec_SE));
 
-% Build once (fixed channel + training across SNR)
+% Build once for M=60 (fixed channel/training across SNR)
 [Uw_SE, Yw_clean_SE] = buildUw_and_cleanY(Nt,Nr,Lt,Lr,M,K,phaseSet,chan,AT,AR);
-sigpow_SE = mean(abs(Yw_clean_SE(:)).^2);
+sigpow_SE = mean(abs(Yw_clean_SE(:)).^2);   % whitened-domain signal power
 
-% --- Two-point calibration in SE domain (perfect CSI) ---
-target_low  = 5.0;  
-snr_low  = -15;
-target_high = 25.0; 
-snr_high =  10;
-
-best_err = inf;  a_SE = 0;  b_SE = 1;      % find SNR' = a + b*SNR
-for b_try = linspace(0.8, 1.4, 25)
-    % match the high end (10 dB) with bisection over 'a'
-    a_lo = -30; a_hi = 30;
-    for it = 1:35
-        a_mid = 0.5*(a_lo + a_hi);
-        Rmid  = spectral_efficiency(chan.Hk, Ns, a_mid + b_try*snr_high);
-        if Rmid < target_high, a_lo = a_mid; else, a_hi = a_mid; end
-    end
-    a_mid = 0.5*(a_lo + a_hi);
-    % measure error at low end
-    Rlow  = spectral_efficiency(chan.Hk, Ns, a_mid + b_try*snr_low);
-    err   = abs(Rlow - target_low);
-    if err < best_err, best_err = err; a_SE = a_mid; b_SE = b_try; end
-end
-mapSE = @(snrdb) (a_SE + b_SE*snrdb);      % calibrated SNR for SE only
-
-% Evaluate SE across SNR; estimation SNR is unchanged
 for is = 1:numel(SNRdB_vec_SE)
     SNRdB  = SNRdB_vec_SE(is);
-    sigma2 = sigpow_SE / (10^(SNRdB/10));           % estimation noise power
 
-    SNRdB_eff = mapSE(SNRdB);                        % calibrated SE SNR
+    % Estimation SNR is defined in the whitened domain to match the spec
+    sigma2 = sigpow_SE / (10^(SNRdB/10));
+
     Rsum = 0;
     for t = 1:Nmc_SE
+        % fresh noise, same channel/training
         Yw = Yw_clean_SE + sqrt(sigma2/2).*(randn(size(Yw_clean_SE))+1j*randn(size(Yw_clean_SE)));
+
+        % SW-OMP estimate
         epsStop = sigma2; maxIter = Lpaths;
         Hv_hat  = swomp_joint_fast(Yw, Uw_SE, epsStop, maxIter);
-        Hhat    = Hv_to_H(Hv_hat, AT, AR, K);
-        Rsum    = Rsum + spectral_efficiency(Hhat, Ns, SNRdB_eff);
+
+        % Reconstruct H and compute spectral efficiency at the SAME SNR
+        Hhat = Hv_to_H(Hv_hat, AT, AR, K);
+        Rsum = Rsum + spectral_efficiency(Hhat, Ns, SNRdB);
     end
     SE_curve(is) = Rsum / Nmc_SE;
-end
-
-% Enforce non-decreasing SE (removes tiny numerical dips)
-for i = 2:numel(SE_curve)
-    if SE_curve(i) < SE_curve(i-1), SE_curve(i) = SE_curve(i-1); end
 end
 
 figure('Name','Spectral Efficiency'); hold on; grid on;
