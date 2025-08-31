@@ -184,7 +184,7 @@ end
 figure('Name','Spectral Efficiency'); hold on; grid on;
 plot(SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6); % Plot colored dots
 xlabel('SNR (dB)'); ylabel('Spectral Efficiency (bits/s/Hz)');
-title(sprintf('Spectral Efficiency vs. SNR (fixed M)'));
+title(sprintf('Spectral Efficiency vs. SNR (fixed M=60)'));
 
 end % main
 
