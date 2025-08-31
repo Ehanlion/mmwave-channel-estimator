@@ -193,9 +193,8 @@ end
 % --- Plot SW-OMP + Perfect-CSI overlay ---
 figure('Name','Spectral Efficiency'); tiledlayout(1,1);
 ax3 = nexttile; hold(ax3,'on'); grid(ax3,'on');
-plot(ax3, SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6, ...
-     'MarkerFaceColor','w','MarkerEdgeColor','w', 'DisplayName','SW-OMP');
-overlay_perfect_csi(ax3, chan.Hk, Ns, SNRdB_vec_SE);   % dashed-squares overlay
+plot(ax3, SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6, 'DisplayName','SW-OMP');
+% overlay_perfect_csi(ax3, chan.Hk, Ns, SNRdB_vec_SE);   % dashed-squares overlay
 
 xlabel(ax3,'SNR (dB)'); ylabel(ax3,'Spectral Efficiency (bits/s/Hz)');
 title(ax3, sprintf('Spectral Efficiency vs. SNR (M = %d, Ns = %d)', M, Ns));
@@ -391,8 +390,7 @@ function h = overlay_perfect_csi(ax, Hk_cell, Ns, SNRdB_vec)
     SE_csi = perfect_csi_se_curve(Hk_cell, Ns, SNRdB_vec);
     h = plot(ax, SNRdB_vec, SE_csi, '--s', ...
              'LineWidth', 1.8, 'MarkerSize', 6, ...
-             'MarkerFaceColor', 'w', 'MarkerEdgeColor', 'w', ...
-             'DisplayName', 'Perfect CSI');
+             'MarkerFaceColor', 'w', 'MarkerEdgeColor');
 end
 
 function se_nmse_diagnostics(chan, Ns, SNRdB_vec, Nt,Nr,Lt,Lr,M,K,phaseSet,AT,AR,Lpaths)
