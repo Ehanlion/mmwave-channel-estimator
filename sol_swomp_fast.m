@@ -47,7 +47,7 @@ for Mi = 1:numel(M_list)
          'DisplayName', sprintf('M=%d',M));
 end
 xlabel(ax1,'SNR (dB)'); ylabel(ax1,'NMSE (dB)');
-title(ax1,'NMSE vs SNR (on-grid AoA/AoD)');
+title(ax1,'NMSE vs. SNR (fixed M values)');
 legend(ax1,'Location','southwest');
 
 
@@ -120,7 +120,7 @@ for is = 1:numel(SNRdB_set)
 end
 
 xlabel(ax2,'Training frames, M'); ylabel(ax2,'NMSE (dB)');
-title(ax2,'NMSE vs number of frames (on-grid AoA/AoD) – Fig. 5 parameters');
+title(ax2,'Fig 2. NMSE vs. M (fixed SNR values)');
 legend(ax2,'Location','northeast');
 
 %% ------------------------- Fig 3: SE vs SNR (M=60) -----------------------
@@ -184,7 +184,7 @@ end
 figure('Name','Spectral Efficiency'); hold on; grid on;
 plot(SNRdB_vec_SE, SE_curve, '-o', 'LineWidth', 1.8, 'MarkerSize', 6); % Plot colored dots
 xlabel('SNR (dB)'); ylabel('Spectral Efficiency (bits/s/Hz)');
-title(sprintf('Spectral Efficiency vs SNR (M = %d, Ns = %d)', M, Ns));
+title(sprintf('Spectral Efficiency vs. SNR (fixed M)'));
 
 end % main
 
