@@ -53,7 +53,7 @@ legend(ax1,'Location','southwest');
 
 
 %% ------------------------- Fig 2: NMSE vs M ------------------------------
-M_sweep    = 20:5:100;
+M_sweep    = 20:20:100;
 SNRdB_set  = [-10, -5, 0];
 Nmc_Fig2   = 24;                         % MC trials for stability (16–32 is fine)
 
@@ -76,7 +76,7 @@ figure('Name','NMSE vs M (Fig.5 setup)'); tiledlayout(1,1);
 ax2 = nexttile; hold(ax2,'on'); grid(ax2,'on');
 
 % white markers for all lines
-markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6,'MarkerFaceColor','w','MarkerEdgeColor','w'};
+markerArgs = {'-o','LineWidth',1.8,'MarkerSize',6};
 
 for is = 1:numel(SNRdB_set)
     SNRdB = SNRdB_set(is);
